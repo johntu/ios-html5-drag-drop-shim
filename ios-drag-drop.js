@@ -19,7 +19,6 @@
     });
 
     this.config = function(_options) {
-      console.log("set options");
       angular.merge(options, _options);
     };
 
@@ -32,14 +31,14 @@
   function init() {
     var doc = window.document;
 
-    var ALL_EFFECTS = ["move", "copy", "link"];
-
     function _exposeIosHtml5DragDropShim(config) {
       log = noop; // noOp, remove this line to enable debugging
 
       var coordinateSystemForElementFromPoint;
 
       var DRAG_OVER_EMIT_FREQ = 50;
+      var DRAG_HOLD_OFFSET = 5;
+      var CONTEXT_MENU_ENABLED = true;
 
       function main() {
         config = config || {};
@@ -62,10 +61,22 @@
           DragDrop.prototype.synthesizeEnterLeave = noop;
         }
 
+        doc.oncontextmenu = function(evt) {
+          if (!CONTEXT_MENU_ENABLED) {
+            CONTEXT_MENU_ENABLED = true;
+            event.preventDefault();
+            event.stopPropagation();
+            return false;
+          }
+        }
+
         if (config.holdToDrag) {
           doc.addEventListener("touchstart", touchstartDelay(config.holdToDrag), {
             passive: false
           });
+          if (config.holdDragOffset) {
+            DRAG_HOLD_OFFSET = config.holdDragOffset;
+          }
         } else {
           doc.addEventListener("touchstart", touchstart, {
             passive: false
@@ -93,6 +104,9 @@
           this.createDragImage();
           this.listen();
         }
+
+        // issue drag drop move to force show placeholder etc
+        this.move(event);
       }
 
       DragDrop.prototype = {
@@ -196,7 +210,7 @@
 
           var dragendEvt = doc.createEvent("Event");
           dragendEvt.initEvent("dragend", true, true);
-          this.el.dispatchEvent(dragendEvt, ALL_EFFECTS);
+          this.el.dispatchEvent(dragendEvt);
           this.clearDragOverTimer();
         },
         dispatchDrop: function(target, event) {
@@ -217,7 +231,7 @@
             getData: function(type) {
               return this.dragData[type];
             }.bind(this),
-            effectAllowed: ALL_EFFECTS[0],
+            effectAllowed: "all",
             dropEffect: "move"
           };
           dropEvt.preventDefault = function() {
@@ -228,7 +242,7 @@
             log("drop event not canceled");
           }, this);
 
-          target.dispatchEvent(dropEvt, ALL_EFFECTS);
+          target.dispatchEvent(dropEvt);
         },
         dispatchEnter: function(event) {
 
@@ -239,7 +253,7 @@
             getData: function(type) {
               return this.dragData[type];
             }.bind(this),
-            effectAllowed: ALL_EFFECTS[0]
+            effectAllowed: "all"
           };
 
           var touch = event.changedTouches[0];
@@ -248,7 +262,7 @@
           enterEvt.clientX = touch.clientX;
           enterEvt.clientY = touch.clientY;
 
-          this.lastEnter.dispatchEvent(enterEvt, ALL_EFFECTS);
+          this.lastEnter.dispatchEvent(enterEvt);
         },
         dispatchOver: function() {
 
@@ -259,7 +273,7 @@
             getData: function(type) {
               return this.dragData[type];
             }.bind(this),
-            effectAllowed: ALL_EFFECTS[0]
+            effectAllowed: "all"
           };
 
           var touch = this.lastMoveEvent.changedTouches[0];
@@ -268,7 +282,7 @@
           overEvt.clientX = touch.clientX;
           overEvt.clientY = touch.clientY;
 
-          this.lastEnter.dispatchEvent(overEvt, ALL_EFFECTS);
+          this.lastEnter.dispatchEvent(overEvt);
         },
         dispatchLeave: function(event) {
 
@@ -279,7 +293,7 @@
             getData: function(type) {
               return this.dragData[type];
             }.bind(this),
-            effectAllowed: ALL_EFFECTS[0]
+            effectAllowed: "all"
           };
 
           var touch = event.changedTouches[0];
@@ -288,7 +302,7 @@
           leaveEvt.clientX = touch.clientX;
           leaveEvt.clientY = touch.clientY;
 
-          this.lastEnter.dispatchEvent(leaveEvt, ALL_EFFECTS);
+          this.lastEnter.dispatchEvent(leaveEvt);
           this.lastEnter = null;
           this.clearDragOverTimer();
         },
@@ -308,10 +322,10 @@
               this.customDragImageX = x
               this.customDragImageY = y
             }.bind(this),
-            effectAllowed: ALL_EFFECTS[0],
+            effectAllowed: "all",
             dropEffect: "move"
           };
-          return this.el.dispatchEvent(evt, ALL_EFFECTS);
+          return this.el.dispatchEvent(evt);
         },
         createDragImage: function() {
           if (this.customDragImage) {
@@ -356,14 +370,33 @@
 
           do {
             if (elementIsDraggable(el)) {
+              var touch = evt.changedTouches[0];
+              var xprev = touch[coordinateSystemForElementFromPoint + 'X'];
+              var yprev = touch[coordinateSystemForElementFromPoint + 'Y'];
+              var distance = 0;
+
+              var onMovedItem = function(evt) {
+                var touch = evt.changedTouches[0];
+                var x = touch[coordinateSystemForElementFromPoint + 'X'];
+                var y = touch[coordinateSystemForElementFromPoint + 'Y'];
+                distance += Math.sqrt(Math.pow(xprev - x, 2) + Math.pow(yprev - y, 2));
+                xprev = x;
+                yprev = y;
+              };
+
               var heldItem = function() {
+                move.off();
                 end.off();
                 cancel.off();
                 scroll.off();
-                touchstart(evt);
+
+                if (distance <= DRAG_HOLD_OFFSET) {
+                  touchstart(evt);
+                }
               };
 
               var onReleasedItem = function() {
+                move.off();
                 end.off();
                 cancel.off();
                 scroll.off();
@@ -372,18 +405,26 @@
 
               var timer = setTimeout(heldItem, delay);
 
+              CONTEXT_MENU_ENABLED = false;
+
+              var move = onEvt(el, 'touchmove', onMovedItem, this);
               var end = onEvt(el, 'touchend', onReleasedItem, this);
               var cancel = onEvt(el, 'touchcancel', onReleasedItem, this);
               var scroll = onEvt(window, 'scroll', onReleasedItem, this);
               break;
             }
           } while ((el = el.parentNode) && el !== doc.body);
+
+          if (!elementIsDraggable(el)) {
+            CONTEXT_MENU_ENABLED = true;
+          }
         };
       };
 
       // event listeners
       function touchstart(evt) {
         var el = evt.target;
+
         do {
           if (elementIsDraggable(el)) {
             handleTouchStartOnAnchor(evt, el);
@@ -393,6 +434,10 @@
             break;
           }
         } while ((el = el.parentNode) && el !== doc.body);
+
+        if (!elementIsDraggable(el)) {
+          CONTEXT_MENU_ENABLED = true;
+        }
       }
 
       function elementIsDraggable(el) {
@@ -419,7 +464,7 @@
           clickEvt.initMouseEvent("click", true, true, el.ownerDocument.defaultView, 1,
             evt.screenX, evt.screenY, evt.clientX, evt.clientY,
             evt.ctrlKey, evt.altKey, evt.shiftKey, evt.metaKey, 0, null);
-          el.dispatchEvent(clickEvt, ALL_EFFECTS);
+          el.dispatchEvent(clickEvt);
           log("Simulating click to anchor");
         }
       }
