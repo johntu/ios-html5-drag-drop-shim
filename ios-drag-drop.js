@@ -39,6 +39,7 @@
       var DRAG_OVER_EMIT_FREQ = 50;
       var DRAG_HOLD_OFFSET = 5;
       var CONTEXT_MENU_ENABLED = true;
+      var TOUCH_MOVE_ENABLED = true;
 
       function main() {
         config = config || {};
@@ -69,6 +70,15 @@
             return false;
           }
         }
+
+        doc.ontouchmove = function(e) {
+          if (TOUCH_MOVE_ENABLED) {
+            return true;
+          } else {
+            e.preventDefault();
+            return false;
+          }
+        };
 
         if (config.holdToDrag) {
           doc.addEventListener("touchstart", touchstartDelay(config.holdToDrag), {
@@ -115,6 +125,8 @@
           var end = onEvt(doc, "touchend", ontouchend, this);
           var cancel = onEvt(doc, "touchcancel", cleanup, this);
 
+          disableTouchMove();
+
           function ontouchend(event) {
             this.dragend(event, event.target);
             cleanup.call(this);
@@ -133,6 +145,9 @@
             this.customDragImageX = null;
             this.customDragImageY = null;
             this.el = this.dragData = null;
+
+            enableTouchMove();
+
             return [move, end, cancel].forEach(function(handler) {
               return handler.off();
             });
@@ -212,6 +227,8 @@
           dragendEvt.initEvent("dragend", true, true);
           this.el.dispatchEvent(dragendEvt);
           this.clearDragOverTimer();
+
+          enableTouchMove();
         },
         dispatchDrop: function(target, event) {
           var dropEvt = doc.createEvent("Event");
@@ -477,6 +494,14 @@
           touch[coordinateSystemForElementFromPoint + "Y"]
         );
         return target;
+      }
+
+      function enableTouchMove() {
+        TOUCH_MOVE_ENABLED = true;
+      }
+
+      function disableTouchMove() {
+        TOUCH_MOVE_ENABLED = false;
       }
 
       //calculate the offset position of an element (relative to the window, not the document)
