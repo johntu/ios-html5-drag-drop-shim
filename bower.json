@@ -1,6 +1,6 @@
 {
   "name": "angular-drag-drop-webkit-mobile",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Shims drag-drop events for mobile webkit browsers (iOS).",
   "main": "ios-drag-drop.js",
   "ignore": [
